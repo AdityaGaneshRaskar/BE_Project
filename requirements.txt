@@ -1,8 +1,9 @@
 fastapi
 uvicorn
-streamlit
 requests
-python-multipart
+python-dotenv
 faster-whisper
-torch
-openai
+opencv-python
+mediapipe
+streamlit
+matplotlib

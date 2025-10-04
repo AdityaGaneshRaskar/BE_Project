@@ -1,33 +1,34 @@
 import os
 import requests
+from dotenv import load_dotenv
 
-# Load your API key
+# Load .env file
+load_dotenv()
+
 API_KEY = os.getenv("GEMINI_API_KEY")
-
 if not API_KEY:
-    raise ValueError("❌ GEMINI_API_KEY not found. Did you set the environment variable?")
+    raise ValueError("❌ No GEMINI_API_KEY found in .env file!")
 
-# Gemini API endpoint
-url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
+url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
-# Define headers + request
 headers = {
     "Content-Type": "application/json",
-    "x-goog-api-key": API_KEY
+    "x-goog-api-key": API_KEY,
 }
 
 data = {
     "contents": [
-        {"parts": [{"text": "Give me feedback on this short speech: Hello everyone, today I will talk about AI in education."}]}
+        {"parts": [{"text": "Give me a short motivational quote"}]}
     ]
 }
 
-# Send request
+print("🔄 Sending request to Gemini API...")
+
 response = requests.post(url, headers=headers, json=data)
 
 if response.status_code == 200:
-    result = response.json()
-    print("✅ Gemini Response:")
-    print(result["candidates"][0]["content"]["parts"][0]["text"])
+    resp_json = response.json()
+    print("✅ Gemini API Response:")
+    print(resp_json["candidates"][0]["content"]["parts"][0]["text"])
 else:
-    print("❌ Error:", response.status_code, response.text)
+    print(f"❌ Error {response.status_code}: {response.text}")

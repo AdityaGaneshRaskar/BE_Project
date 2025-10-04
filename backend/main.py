@@ -1,113 +1,108 @@
 from fastapi import FastAPI, UploadFile, File
-import shutil
-import os
-import requests
-import json
-import json5  # forgiving JSON parser
-import re
-from backend.stt_service import transcribe_audio
+import shutil, os, json, requests
+from dotenv import load_dotenv
+from backend.stt_service import transcribe_audio  # Your existing Whisper service
+from backend.facial_gesture import FacialGestureAnalyzer
 
-# Create FastAPI app
-app = FastAPI()
-
-# Load Gemini API key
+# =======================
+# 1️⃣ Load Environment
+# =======================
+load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-def clean_json_text(text: str) -> str:
-    """Clean and fix JSON text from Gemini before parsing."""
-    text = text.strip()
+if not GEMINI_API_KEY:
+    raise ValueError("❌ GEMINI_API_KEY not found in .env file")
 
-    # Remove code block wrappers
-    if text.startswith("```"):
-        text = text.replace("```json", "").replace("```", "").strip()
+# =======================
+# 2️⃣ FastAPI App
+# =======================
+app = FastAPI(
+    title="Extempore Speech Evaluator",
+    description="Transcribe speech, get Gemini feedback, and analyze facial gestures",
+    version="1.0.0"
+)
 
-    # Fix single quotes → double quotes
-    text = text.replace("'", '"')
-
-    # Escape quotes inside values properly
-    import re
-    text = re.sub(r'(\w)"(\w)', r'\1\\"\2', text)  # speaker"s → speaker\"s
-
-    return text
-
-
-def get_gemini_feedback(transcription: str) -> dict:
-    """
-    Send transcription to Gemini API for structured feedback.
-    """
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
-
+# =======================
+# 3️⃣ Gemini Helper
+# =======================
+def call_gemini(transcription: str) -> dict:
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
     headers = {
         "Content-Type": "application/json",
         "x-goog-api-key": GEMINI_API_KEY
     }
 
-    data = {
-        "contents": [
-            {"parts": [{"text": f"""
-            Evaluate this extempore speech:
+    prompt = f"""
+    Evaluate the following extempore speech and return ONLY valid JSON
+    (no markdown, no extra text) in this format:
+    {{
+      "Clarity":   {{ "score": <0-10>, "comment": "...", "improvements": ["...","..."] }},
+      "Arguments": {{ "score": <0-10>, "comment": "...", "improvements": ["...","..."] }},
+      "Grammar":   {{ "score": <0-10>, "comment": "...", "improvements": ["...","..."] }},
+      "Delivery":  {{ "score": <0-10>, "comment": "...", "improvements": ["...","..."] }},
+      "Overall":   {{ "score": <0-10>, "comment": "...", "improvements": ["...","..."] }}
+    }}
+    Speech:
+    {transcription}
+    """
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
-            {transcription}
+    try:
+        r = requests.post(url, headers=headers, json=payload, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+        raw_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-            Respond ONLY in valid JSON format (double quotes required, no code blocks, no markdown).
-            Escape quotes inside text (use \\").
-            
-            For each category, give:
-            1. score (1-10),
-            2. comment (2-3 sentences with detailed explanation),
-            3. improvements (bullet point suggestions).
+        # Clean formatting
+        clean = raw_text
+        if clean.lower().startswith("json"):
+            clean = clean[4:].strip()
+        if clean.startswith("```"):
+            clean = clean.replace("```json", "").replace("```", "").strip()
 
-            Structure:
-            {{
-              "Clarity": {{"score": number, "comment": "detailed feedback", "improvements": ["point1", "point2"]}},
-              "Arguments": {{"score": number, "comment": "detailed feedback", "improvements": ["point1", "point2"]}},
-              "Grammar": {{"score": number, "comment": "detailed feedback", "improvements": ["point1", "point2"]}},
-              "Delivery": {{"score": number, "comment": "detailed feedback", "improvements": ["point1", "point2"]}},
-              "Overall": {{"score": number, "comment": "summary of performance", "improvements": ["point1", "point2"]}}
-            }}
-            """}]}
-        ]
-    }
+        return json.loads(clean)
+    except Exception as e:
+        return {"Error": f"Failed to get Gemini feedback: {e}", "raw_response": r.text if 'r' in locals() else None}
 
-    response = requests.post(url, headers=headers, json=data)
-
-    if response.status_code == 200:
-        resp_json = response.json()
-        feedback_text = resp_json["candidates"][0]["content"]["parts"][0]["text"]
-
-        feedback_text = clean_json_text(feedback_text)
-
-        # Try parsing as JSON
-        try:
-            return json.loads(feedback_text)
-        except Exception:
-            try:
-                return json5.loads(feedback_text)  # fallback
-            except Exception:
-                return {"Error": f"Invalid JSON from Gemini after cleaning: {feedback_text}"}
-    else:
-        return {"Error": f"Gemini API error {response.status_code}: {response.text}"}
-
-
+# =======================
+# 4️⃣ Routes
+# =======================
 @app.get("/")
-def home():
-    return {"message": "Backend is running with Faster-Whisper + Gemini!"}
+def root():
+    return {"message": "✅ Backend running with Faster-Whisper + Gemini + Facial Gesture Analyzer"}
 
+@app.post("/analyze")
+async def analyze(file: UploadFile = File(...)):
+    temp_path = f"temp_{file.filename}"
+    try:
+        # Save uploaded file
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
 
-@app.post("/transcribe")
-async def transcribe(file: UploadFile = File(...)):
-    # Save uploaded file temporarily
-    temp_file = f"temp_{file.filename}"
-    with open(temp_file, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        # Close UploadFile to release handle (Windows safe)
+        file.file.close()
 
-    # Step 1: Transcribe audio (speech → text)
-    transcription = transcribe_audio(temp_file)
+        # --- Step 1: Transcribe speech ---
+        transcription = transcribe_audio(temp_path)
 
-    # Step 2: Get Gemini structured feedback
-    feedback = get_gemini_feedback(transcription)
+        # --- Step 2: Gemini feedback ---
+        feedback = call_gemini(transcription)
 
-    return {
-        "transcription": transcription,
-        "feedback": feedback
-    }
+        # --- Step 3: Facial gesture analysis ---
+        analyzer = FacialGestureAnalyzer()
+        gesture_metrics = analyzer.analyze_video(temp_path)
+
+        # --- Step 4: Return combined JSON ---
+        return {
+            "transcription": transcription,
+            "feedback": feedback,
+            "gesture_metrics": gesture_metrics
+        }
+
+    finally:
+        # Cleanup temp file safely on Windows
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except PermissionError:
+            pass
