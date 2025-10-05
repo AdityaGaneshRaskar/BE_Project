@@ -15,3 +15,6 @@ Thumbs.db
 
 # Ignore temporary audio files
 temp_*.mp3
+
+# Ignore virtual env
+venv310/

@@ -2,6 +2,17 @@ import streamlit as st
 import requests
 import matplotlib.pyplot as plt
 from math import pi
+import sys
+import os
+
+# Add backend to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+try:
+    from backend.database import save_analysis
+    DB_AVAILABLE = True
+except:
+    DB_AVAILABLE = False
 
 # ===== LOGIN CHECK =====
 if 'logged_in' not in st.session_state:
@@ -60,6 +71,7 @@ with col_logout:
     if st.button("Logout 🚪", key="logout_btn"):
         st.session_state.logged_in = False
         st.session_state.username = None
+        st.session_state.user_id = None
         st.rerun()
 
 # --- App Header ---
@@ -120,6 +132,21 @@ if uploaded_file is not None:
 
         if response.status_code == 200:
             result = response.json()
+
+            # Save analysis to database
+            if DB_AVAILABLE and st.session_state.get('user_id'):
+                gesture_metrics = result.get("gesture_metrics", {})
+                if gesture_metrics:
+                    confidence, nervousness = estimate_confidence_nervousness(gesture_metrics)
+                    result['confidence_score'] = confidence
+                    result['nervousness_score'] = nervousness
+                    result['filename'] = uploaded_file.name
+                    
+                    save_result = save_analysis(st.session_state.user_id, result)
+                    if save_result['success']:
+                        st.success("✅ Analysis saved to your history!")
+                    else:
+                        st.warning(f"⚠️ Could not save to history: {save_result.get('message', 'Unknown error')}")
 
             # --- Transcription ---
             with st.container():

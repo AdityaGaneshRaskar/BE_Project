@@ -1,4 +1,16 @@
 import streamlit as st
+import sys
+import os
+
+# Add backend to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+try:
+    from backend.database import login_user, register_user
+    DB_AVAILABLE = True
+except Exception as e:
+    print(f"⚠️ Database not available: {e}")
+    DB_AVAILABLE = False
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -104,16 +116,6 @@ st.markdown("""
         color: #a0a0a0;
     }
     
-    .signup-link a {
-        color: #feca57;
-        text-decoration: none;
-        font-weight: 600;
-    }
-    
-    .signup-link a:hover {
-        color: #ff6b6b;
-    }
-    
     .feature-list {
         background-color: #252525;
         border-radius: 0.5rem;
@@ -145,22 +147,41 @@ if 'show_signup' not in st.session_state:
     st.session_state.show_signup = False
 
 # --- Login/Signup Logic ---
-def login_user(username, password):
-    # TODO: Add actual authentication logic here
-    # For now, accept any non-empty credentials
-    if username and password:
-        st.session_state.logged_in = True
-        st.session_state.username = username
-        return True
-    return False
+def handle_login(username, password):
+    """Handle user login with database"""
+    if not username or not password:
+        return False, "Please enter both username and password"
+    
+    if DB_AVAILABLE:
+        result = login_user(username, password)
+        if result['success']:
+            st.session_state.logged_in = True
+            st.session_state.username = result['username']
+            st.session_state.user_id = result['user_id']
+            st.session_state.email = result['email']
+            return True, "Login successful"
+        return False, result.get('message', 'Invalid credentials')
+    else:
+        # Fallback: accept any non-empty credentials
+        if username and password:
+            st.session_state.logged_in = True
+            st.session_state.username = username
+            st.session_state.user_id = None
+            return True, "Login successful (DB offline)"
+        return False, "Invalid credentials"
 
-def signup_user(username, email, password):
-    # TODO: Add actual user registration logic here
-    if username and email and password:
-        st.success("✅ Account created successfully! Please login.")
-        st.session_state.show_signup = False
-        return True
-    return False
+def handle_signup(username, email, password):
+    """Handle user registration with database"""
+    if not username or not email or not password:
+        return False, "All fields are required"
+    
+    if DB_AVAILABLE:
+        result = register_user(username, email, password)
+        if result['success']:
+            return True, "Account created successfully! Please login."
+        return False, result.get('message', 'Registration failed')
+    else:
+        return False, "Database not available. Cannot register."
 
 # --- Main UI ---
 if not st.session_state.logged_in:
@@ -175,6 +196,9 @@ if not st.session_state.logged_in:
         st.markdown('<div class="app-title">Extempore Evaluator</div>', unsafe_allow_html=True)
         st.markdown('<div class="app-subtitle">AI-Powered Speech Analysis</div>', unsafe_allow_html=True)
         
+        if not DB_AVAILABLE:
+            st.warning("⚠️ Database offline - Guest mode only")
+        
         # Toggle between Login and Signup
         if not st.session_state.show_signup:
             # --- LOGIN FORM ---
@@ -186,24 +210,22 @@ if not st.session_state.logged_in:
             col_login1, col_login2 = st.columns(2)
             with col_login1:
                 remember_me = st.checkbox("Remember me")
-            with col_login2:
-                st.markdown('<p style="text-align: right; margin-top: 0.5rem;"><a href="#" style="color: #feca57; text-decoration: none;">Forgot Password?</a></p>', unsafe_allow_html=True)
             
             if st.button("Login 🚀"):
-                if login_user(username, password):
-                    st.success("✅ Login successful!")
+                success, message = handle_login(username, password)
+                if success:
+                    st.success(f"✅ {message}")
                     st.rerun()
                 else:
-                    st.error("❌ Please enter valid credentials")
+                    st.error(f"❌ {message}")
             
             st.markdown('<div class="divider">OR</div>', unsafe_allow_html=True)
             
             if st.button("Continue as Guest"):
                 st.session_state.logged_in = True
                 st.session_state.username = "Guest"
+                st.session_state.user_id = None
                 st.rerun()
-            
-            st.markdown('<div class="signup-link">Don\'t have an account? <a href="#" id="show_signup">Sign Up</a></div>', unsafe_allow_html=True)
             
             if st.button("Create New Account", key="show_signup_btn"):
                 st.session_state.show_signup = True
@@ -215,7 +237,7 @@ if not st.session_state.logged_in:
             
             new_username = st.text_input("Username", placeholder="Choose a username", key="signup_username")
             new_email = st.text_input("Email", placeholder="Enter your email", key="signup_email")
-            new_password = st.text_input("Password", type="password", placeholder="Create a password", key="signup_password")
+            new_password = st.text_input("Password", type="password", placeholder="Create a password (min 6 characters)", key="signup_password")
             confirm_password = st.text_input("Confirm Password", type="password", placeholder="Confirm your password", key="confirm_password")
             
             accept_terms = st.checkbox("I agree to the Terms & Conditions")
@@ -223,12 +245,20 @@ if not st.session_state.logged_in:
             if st.button("Sign Up 🎉"):
                 if new_password != confirm_password:
                     st.error("❌ Passwords don't match!")
+                elif len(new_password) < 6:
+                    st.error("❌ Password must be at least 6 characters!")
                 elif not accept_terms:
                     st.error("❌ Please accept the Terms & Conditions")
+                elif "@" not in new_email:
+                    st.error("❌ Please enter a valid email address")
                 else:
-                    signup_user(new_username, new_email, new_password)
-            
-            st.markdown('<div class="signup-link">Already have an account? <a href="#">Login</a></div>', unsafe_allow_html=True)
+                    success, message = handle_signup(new_username, new_email, new_password)
+                    if success:
+                        st.success(f"✅ {message}")
+                        st.session_state.show_signup = False
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {message}")
             
             if st.button("Back to Login", key="back_to_login"):
                 st.session_state.show_signup = False
@@ -243,17 +273,3 @@ if not st.session_state.logged_in:
         st.markdown('<div class="feature-item">Comprehensive feedback & scoring</div>', unsafe_allow_html=True)
         st.markdown('<div class="feature-item">Confidence & nervousness metrics</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
-
-else:
-    # --- LOGGED IN VIEW ---
-    st.success(f"🎉 Welcome, {st.session_state.username}!")
-    st.write("You are now logged in. Redirecting to main app...")
-    
-    if st.button("Go to Evaluator"):
-        # TODO: Navigate to your main app.py
-        st.info("🔄 Load your main app.py content here or use st.switch_page()")
-    
-    if st.button("Logout"):
-        st.session_state.logged_in = False
-        st.session_state.username = None
-        st.rerun()
