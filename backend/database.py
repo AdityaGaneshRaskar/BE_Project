@@ -43,7 +43,7 @@ def create_tables():
     try:
         cursor = conn.cursor()
         
-        # Users table
+        # Users table (unchanged)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id SERIAL PRIMARY KEY,
@@ -55,26 +55,52 @@ def create_tables():
             )
         """)
         
-        # Speech analyses table
+        # Enhanced speech analyses table with more tracking
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS speech_analyses (
                 analysis_id SERIAL PRIMARY KEY,
                 user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
                 filename VARCHAR(255),
                 transcription TEXT,
+                
+                -- Feedback scores
                 clarity_score FLOAT,
+                clarity_comment TEXT,
                 arguments_score FLOAT,
+                arguments_comment TEXT,
                 grammar_score FLOAT,
+                grammar_comment TEXT,
                 delivery_score FLOAT,
+                delivery_comment TEXT,
                 overall_score FLOAT,
+                overall_comment TEXT,
+                
+                -- Gesture metrics
                 smile_mean FLOAT,
                 eyebrow_raise_mean FLOAT,
                 blink_count INTEGER,
                 head_pose_mean FLOAT,
+                
+                -- Calculated metrics
                 confidence_score FLOAT,
                 nervousness_score FLOAT,
-                analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                
+                -- File info
+                file_duration FLOAT,
+                file_size INTEGER,
+                
+                -- Timestamps
+                analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                
+                -- Session tracking
+                session_number INTEGER DEFAULT 1
             )
+        """)
+        
+        # Create index for faster queries
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_analyses 
+            ON speech_analyses(user_id, analyzed_at DESC)
         """)
         
         conn.commit()
@@ -152,7 +178,7 @@ def login_user(username, password):
         release_db_connection(conn)
 
 def save_analysis(user_id, analysis_data):
-    """Save speech analysis results"""
+    """Save speech analysis results with enhanced tracking"""
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
@@ -160,35 +186,55 @@ def save_analysis(user_id, analysis_data):
         feedback = analysis_data.get('feedback', {})
         gesture_metrics = analysis_data.get('gesture_metrics', {})
         
+        # Get session number (count of previous analyses + 1)
+        cursor.execute(
+            "SELECT COUNT(*) FROM speech_analyses WHERE user_id = %s",
+            (user_id,)
+        )
+        session_number = cursor.fetchone()[0] + 1
+        
         cursor.execute("""
             INSERT INTO speech_analyses (
                 user_id, filename, transcription,
-                clarity_score, arguments_score, grammar_score, 
-                delivery_score, overall_score,
+                clarity_score, clarity_comment,
+                arguments_score, arguments_comment,
+                grammar_score, grammar_comment,
+                delivery_score, delivery_comment,
+                overall_score, overall_comment,
                 smile_mean, eyebrow_raise_mean, blink_count, head_pose_mean,
-                confidence_score, nervousness_score
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                confidence_score, nervousness_score,
+                file_duration, file_size,
+                session_number
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING analysis_id
         """, (
             user_id,
             analysis_data.get('filename', ''),
             analysis_data.get('transcription', ''),
             feedback.get('Clarity', {}).get('score', 0),
+            feedback.get('Clarity', {}).get('comment', ''),
             feedback.get('Arguments', {}).get('score', 0),
+            feedback.get('Arguments', {}).get('comment', ''),
             feedback.get('Grammar', {}).get('score', 0),
+            feedback.get('Grammar', {}).get('comment', ''),
             feedback.get('Delivery', {}).get('score', 0),
+            feedback.get('Delivery', {}).get('comment', ''),
             feedback.get('Overall', {}).get('score', 0),
+            feedback.get('Overall', {}).get('comment', ''),
             gesture_metrics.get('smile_mean', 0),
             gesture_metrics.get('eyebrow_raise_mean', 0),
             gesture_metrics.get('blink_count', 0),
             gesture_metrics.get('head_pose_mean', 0),
             analysis_data.get('confidence_score', 0),
-            analysis_data.get('nervousness_score', 0)
+            analysis_data.get('nervousness_score', 0),
+            analysis_data.get('file_duration', 0),
+            analysis_data.get('file_size', 0),
+            session_number
         ))
         
         analysis_id = cursor.fetchone()[0]
         conn.commit()
-        return {"success": True, "analysis_id": analysis_id}
+        return {"success": True, "analysis_id": analysis_id, "session_number": session_number}
     except Exception as e:
         conn.rollback()
         return {"success": False, "message": f"Error: {str(e)}"}
@@ -241,6 +287,191 @@ def get_analysis_details(analysis_id):
         if result:
             return {"success": True, "analysis": result}
         return {"success": False, "message": "Analysis not found"}
+    except Exception as e:
+        return {"success": False, "message": f"Error: {str(e)}"}
+    finally:
+        cursor.close()
+        release_db_connection(conn)
+
+def get_user_statistics(user_id):
+    """Get user's overall statistics and progress"""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        
+        # Get overall statistics
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_analyses,
+                AVG(overall_score) as avg_overall_score,
+                AVG(confidence_score) as avg_confidence,
+                AVG(nervousness_score) as avg_nervousness,
+                MAX(overall_score) as best_score,
+                MIN(overall_score) as worst_score
+            FROM speech_analyses
+            WHERE user_id = %s
+        """, (user_id,))
+        
+        stats = cursor.fetchone()
+        
+        # Get improvement trend (last 5 vs first 5)
+        cursor.execute("""
+            SELECT overall_score, session_number, analyzed_at
+            FROM speech_analyses
+            WHERE user_id = %s
+            ORDER BY analyzed_at DESC
+            LIMIT 5
+        """, (user_id,))
+        recent_scores = cursor.fetchall()
+        
+        cursor.execute("""
+            SELECT overall_score, session_number, analyzed_at
+            FROM speech_analyses
+            WHERE user_id = %s
+            ORDER BY analyzed_at ASC
+            LIMIT 5
+        """, (user_id,))
+        first_scores = cursor.fetchall()
+        
+        return {
+            "success": True,
+            "statistics": {
+                "total_analyses": stats[0] or 0,
+                "avg_overall_score": round(stats[1] or 0, 2),
+                "avg_confidence": round(stats[2] or 0, 2),
+                "avg_nervousness": round(stats[3] or 0, 2),
+                "best_score": round(stats[4] or 0, 2),
+                "worst_score": round(stats[5] or 0, 2)
+            },
+            "recent_scores": [{"score": s[0], "session": s[1], "date": s[2].strftime("%Y-%m-%d")} for s in recent_scores],
+            "first_scores": [{"score": s[0], "session": s[1], "date": s[2].strftime("%Y-%m-%d")} for s in first_scores]
+        }
+    except Exception as e:
+        return {"success": False, "message": f"Error: {str(e)}"}
+    finally:
+        cursor.close()
+        release_db_connection(conn)
+
+def get_detailed_history(user_id, limit=20):
+    """Get user's detailed speech analysis history"""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                analysis_id, session_number, filename,
+                clarity_score, arguments_score, grammar_score, 
+                delivery_score, overall_score,
+                confidence_score, nervousness_score,
+                smile_mean, eyebrow_raise_mean, blink_count, head_pose_mean,
+                analyzed_at
+            FROM speech_analyses
+            WHERE user_id = %s
+            ORDER BY analyzed_at DESC
+            LIMIT %s
+        """, (user_id, limit))
+        
+        results = cursor.fetchall()
+        history = []
+        for row in results:
+            history.append({
+                "analysis_id": row[0],
+                "session_number": row[1],
+                "filename": row[2],
+                "scores": {
+                    "clarity": round(row[3] or 0, 1),
+                    "arguments": round(row[4] or 0, 1),
+                    "grammar": round(row[5] or 0, 1),
+                    "delivery": round(row[6] or 0, 1),
+                    "overall": round(row[7] or 0, 1)
+                },
+                "confidence_score": round(row[8] or 0, 1),
+                "nervousness_score": round(row[9] or 0, 1),
+                "gestures": {
+                    "smile": round(row[10] or 0, 3),
+                    "eyebrow": round(row[11] or 0, 3),
+                    "blink": row[12] or 0,
+                    "head_tilt": round(row[13] or 0, 3)
+                },
+                "analyzed_at": row[14].strftime("%Y-%m-%d %H:%M:%S")
+            })
+        return {"success": True, "history": history}
+    except Exception as e:
+        return {"success": False, "message": f"Error: {str(e)}"}
+    finally:
+        cursor.close()
+        release_db_connection(conn)
+
+def compare_analyses(user_id, analysis_id_1, analysis_id_2):
+    """Compare two analyses side by side"""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                analysis_id, session_number, filename, transcription,
+                clarity_score, clarity_comment,
+                arguments_score, arguments_comment,
+                grammar_score, grammar_comment,
+                delivery_score, delivery_comment,
+                overall_score, overall_comment,
+                confidence_score, nervousness_score,
+                smile_mean, eyebrow_raise_mean, blink_count, head_pose_mean,
+                analyzed_at
+            FROM speech_analyses
+            WHERE user_id = %s AND analysis_id IN (%s, %s)
+            ORDER BY analyzed_at ASC
+        """, (user_id, analysis_id_1, analysis_id_2))
+        
+        results = cursor.fetchall()
+        
+        if len(results) != 2:
+            return {"success": False, "message": "One or both analyses not found"}
+        
+        analyses = []
+        for row in results:
+            analyses.append({
+                "analysis_id": row[0],
+                "session_number": row[1],
+                "filename": row[2],
+                "transcription": row[3],
+                "feedback": {
+                    "clarity": {"score": row[4], "comment": row[5]},
+                    "arguments": {"score": row[6], "comment": row[7]},
+                    "grammar": {"score": row[8], "comment": row[9]},
+                    "delivery": {"score": row[10], "comment": row[11]},
+                    "overall": {"score": row[12], "comment": row[13]}
+                },
+                "confidence_score": row[14],
+                "nervousness_score": row[15],
+                "gestures": {
+                    "smile": row[16],
+                    "eyebrow": row[17],
+                    "blink": row[18],
+                    "head_tilt": row[19]
+                },
+                "analyzed_at": row[20].strftime("%Y-%m-%d %H:%M:%S")
+            })
+        
+        # Calculate improvements
+        improvement = {
+            "clarity": round(analyses[1]["feedback"]["clarity"]["score"] - analyses[0]["feedback"]["clarity"]["score"], 1),
+            "arguments": round(analyses[1]["feedback"]["arguments"]["score"] - analyses[0]["feedback"]["arguments"]["score"], 1),
+            "grammar": round(analyses[1]["feedback"]["grammar"]["score"] - analyses[0]["feedback"]["grammar"]["score"], 1),
+            "delivery": round(analyses[1]["feedback"]["delivery"]["score"] - analyses[0]["feedback"]["delivery"]["score"], 1),
+            "overall": round(analyses[1]["feedback"]["overall"]["score"] - analyses[0]["feedback"]["overall"]["score"], 1),
+            "confidence": round(analyses[1]["confidence_score"] - analyses[0]["confidence_score"], 1),
+            "nervousness": round(analyses[1]["nervousness_score"] - analyses[0]["nervousness_score"], 1)
+        }
+        
+        return {
+            "success": True,
+            "comparison": {
+                "older": analyses[0],
+                "newer": analyses[1],
+                "improvement": improvement
+            }
+        }
     except Exception as e:
         return {"success": False, "message": f"Error: {str(e)}"}
     finally:

@@ -16,5 +16,15 @@ Thumbs.db
 # Ignore temporary audio files
 temp_*.mp3
 
-# Ignore virtual env
-venv310/
+# Ignore frontend dependencies
+frontend/node_modules/
+
+# Ignore build folder
+frontend/build/
+
+# Ignore Python virtual environment in root
+venv/
+.venv/
+env/
+
+

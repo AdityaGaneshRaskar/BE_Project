@@ -7,3 +7,6 @@ opencv-python
 mediapipe
 streamlit
 matplotlib
+pydantic
+python-
+psycopg2
