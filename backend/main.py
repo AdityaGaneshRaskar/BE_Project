@@ -108,6 +108,91 @@ def call_gemini(transcription: str) -> dict:
     except Exception as e:
         return {"Error": f"Failed to get Gemini feedback: {e}"}
 
+def generate_gemini_speech(topic: str) -> dict:
+    """Generate a reference speech on a given topic using Gemini"""
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY
+    }
+
+    prompt = f"""Generate a professional, well-structured extempore speech on the following topic. 
+    The speech should be approximately 2-3 minutes long (400-600 words).
+    
+    Structure it as:
+    1. Hook/Introduction (grab attention)
+    2. Main Body (2-3 key points with examples)
+    3. Counterargument acknowledgment
+    4. Conclusion (summarize and call to action)
+    
+    Use clear language, varied sentence structure, and compelling examples.
+    Make it engaging and persuasive.
+    
+    Topic: {topic}
+    
+    IMPORTANT: Return ONLY the speech text, nothing else."""
+    
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+
+    try:
+        r = requests.post(url, headers=headers, json=payload, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+        speech = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        return {"success": True, "speech": speech}
+    except Exception as e:
+        return {"success": False, "message": f"Failed to generate speech: {e}"}
+
+def analyze_speech_comparison(user_transcript: str, gemini_speech: str) -> dict:
+    """Analyze and compare user's speech with Gemini's speech"""
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY
+    }
+
+    prompt = f"""Analyze and compare these two speeches. Return a JSON response with this exact structure:
+    {{
+      "word_count_user": <number>,
+      "word_count_gemini": <number>,
+      "vocabulary_level_user": "<beginner/intermediate/advanced>",
+      "vocabulary_level_gemini": "<beginner/intermediate/advanced>",
+      "user_key_points": ["point1", "point2", "point3"],
+      "gemini_key_points": ["point1", "point2", "point3"],
+      "user_strengths": ["strength1", "strength2"],
+      "areas_to_improve": ["area1", "area2"],
+      "structure_analysis": "Analysis of how well each speech was structured",
+      "engagement_level": "How engaging each speech was",
+      "recommendations": ["recommendation1", "recommendation2", "recommendation3"]
+    }}
+    
+    USER'S SPEECH:
+    {user_transcript}
+    
+    GEMINI'S SPEECH:
+    {gemini_speech}
+    
+    Return ONLY valid JSON, no markdown or extra text."""
+    
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+
+    try:
+        r = requests.post(url, headers=headers, json=payload, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+        raw_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        
+        # Clean JSON formatting
+        clean = raw_text
+        if clean.lower().startswith("json"):
+            clean = clean[4:].strip()
+        if clean.startswith("```"):
+            clean = clean.replace("```json", "").replace("```", "").strip()
+        
+        return {"success": True, "analysis": json.loads(clean)}
+    except Exception as e:
+        return {"success": False, "message": f"Failed to analyze comparison: {e}"}
+    
 # =======================
 # 6️⃣ Routes
 # =======================
@@ -261,3 +346,34 @@ def compare(user_id: int, analysis_id_1: int, analysis_id_2: int):
     except Exception as e:
         print(f"❌ Comparison error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+class GenerateSpeechRequest(BaseModel):
+    topic: str
+
+@app.post("/generate-gemini-speech")
+def generate_speech(request: GenerateSpeechRequest):
+    """Generate a reference speech on a given topic"""
+    try:
+        result = generate_gemini_speech(request.topic)
+        if result['success']:
+            return result
+        else:
+            raise HTTPException(status_code=500, detail=result.get('message'))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class CompareSpeeches(BaseModel):
+    user_transcript: str
+    gemini_speech: str
+
+@app.post("/compare-speeches")
+def compare_speeches(request: CompareSpeeches):
+    """Compare user's speech with Gemini's speech"""
+    try:
+        result = analyze_speech_comparison(request.user_transcript, request.gemini_speech)
+        if result['success']:
+            return result
+        else:
+            raise HTTPException(status_code=500, detail=result.get('message'))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))  
