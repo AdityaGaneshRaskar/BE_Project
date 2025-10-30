@@ -7,7 +7,7 @@ const ExtemporeSpeechEvaluator = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [showProgress, setShowProgress] = useState(false);
-  
+
   // Topic and analysis flow
   const [topic, setTopic] = useState('');
   const [file, setFile] = useState(null);
@@ -57,18 +57,18 @@ const ExtemporeSpeechEvaluator = () => {
       alert('Please upload your speech video/audio');
       return;
     }
-    
+
     setIsAnalyzing(true);
     const formData = new FormData();
     formData.append('file', file);
-    
+
     try {
       // Step 1: Analyze user's speech
       const response = await fetch('http://127.0.0.1:8000/analyze', {
         method: 'POST',
         body: formData,
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setResults(data);
@@ -80,7 +80,12 @@ const ExtemporeSpeechEvaluator = () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               user_id: user.userId,
-              analysis_data: { ...data, filename: file.name, topic: topic }
+              analysis_data: {
+                ...data,
+                filename: file.name,
+                topic: topic,
+                video_path: data.video_path
+              }
             }),
           });
         }
@@ -138,7 +143,7 @@ const ExtemporeSpeechEvaluator = () => {
     const center = size / 2;
     const maxRadius = 80;
     const numPoints = data.length;
-    
+
     const points = data.map((value, i) => {
       const angle = (Math.PI * 2 * i) / numPoints - Math.PI / 2;
       const radius = (value / 10) * maxRadius;
@@ -147,13 +152,13 @@ const ExtemporeSpeechEvaluator = () => {
         y: center + radius * Math.sin(angle)
       };
     });
-    
-    const pathData = points.map((p, i) => 
+
+    const pathData = points.map((p, i) =>
       `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`
     ).join(' ') + ' Z';
-    
+
     const gridLevels = [2, 4, 6, 8, 10];
-    
+
     return (
       <svg width={size} height={size} className="mx-auto">
         <defs>
@@ -162,7 +167,7 @@ const ExtemporeSpeechEvaluator = () => {
             <stop offset="100%" stopColor="#feca57" stopOpacity="0.2" />
           </radialGradient>
         </defs>
-        
+
         {gridLevels.map(level => {
           const levelPoints = Array(numPoints).fill(0).map((_, i) => {
             const angle = (Math.PI * 2 * i) / numPoints - Math.PI / 2;
@@ -172,16 +177,16 @@ const ExtemporeSpeechEvaluator = () => {
               y: center + radius * Math.sin(angle)
             };
           });
-          
-          const levelPath = levelPoints.map((p, i) => 
+
+          const levelPath = levelPoints.map((p, i) =>
             `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`
           ).join(' ') + ' Z';
-          
+
           return (
             <path key={level} d={levelPath} fill="none" stroke="#333" strokeWidth="1" opacity="0.3" />
           );
         })}
-        
+
         {points.map((_, i) => {
           const angle = (Math.PI * 2 * i) / numPoints - Math.PI / 2;
           const endX = center + maxRadius * Math.cos(angle);
@@ -190,9 +195,9 @@ const ExtemporeSpeechEvaluator = () => {
             <line key={i} x1={center} y1={center} x2={endX} y2={endY} stroke="#444" strokeWidth="1" />
           );
         })}
-        
+
         <path d={pathData} fill="url(#radarGradient)" stroke="#feca57" strokeWidth="2" />
-        
+
         {points.map((p, i) => (
           <circle key={i} cx={p.x} cy={p.y} r="4" fill="#ff6b6b" />
         ))}
@@ -216,8 +221,8 @@ const ExtemporeSpeechEvaluator = () => {
       {/* Animated Background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-20 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-10 animate-pulse"></div>
-        <div className="absolute top-40 right-20 w-72 h-72 bg-yellow-500 rounded-full mix-blend-multiply filter blur-xl opacity-10 animate-pulse" style={{animationDelay: '1s'}}></div>
-        <div className="absolute -bottom-8 left-1/2 w-72 h-72 bg-pink-500 rounded-full mix-blend-multiply filter blur-xl opacity-10 animate-pulse" style={{animationDelay: '2s'}}></div>
+        <div className="absolute top-40 right-20 w-72 h-72 bg-yellow-500 rounded-full mix-blend-multiply filter blur-xl opacity-10 animate-pulse" style={{ animationDelay: '1s' }}></div>
+        <div className="absolute -bottom-8 left-1/2 w-72 h-72 bg-pink-500 rounded-full mix-blend-multiply filter blur-xl opacity-10 animate-pulse" style={{ animationDelay: '2s' }}></div>
       </div>
 
       {/* Header */}
@@ -235,7 +240,7 @@ const ExtemporeSpeechEvaluator = () => {
                 <p className="text-xs text-gray-400">AI-Powered Speech Analysis</p>
               </div>
             </div>
-            
+
             <div className="flex items-center space-x-3">
               <div className="px-4 py-2 bg-gray-800 rounded-lg border border-gray-700">
                 <div className="flex items-center space-x-2">
@@ -244,9 +249,9 @@ const ExtemporeSpeechEvaluator = () => {
                   {user?.isGuest && <span className="text-xs text-gray-500">(Guest)</span>}
                 </div>
               </div>
-              
+
               {!user?.isGuest && (
-                <button 
+                <button
                   onClick={() => setShowProgress(true)}
                   className="px-4 py-2 bg-gradient-to-r from-purple-500 via-pink-500 to-yellow-500 rounded-lg font-medium hover:shadow-lg transition-all flex items-center space-x-2 text-white"
                 >
@@ -254,7 +259,7 @@ const ExtemporeSpeechEvaluator = () => {
                   <span>Progress</span>
                 </button>
               )}
-              
+
               <button onClick={handleLogout} className="p-2 hover:bg-gray-800 rounded-lg transition-colors">
                 <LogOut className="w-5 h-5 text-gray-400" />
               </button>
@@ -303,7 +308,7 @@ const ExtemporeSpeechEvaluator = () => {
                 <div className="w-10 h-10 bg-yellow-500 rounded-full flex items-center justify-center font-bold mr-3">2</div>
                 <h3 className="text-2xl font-bold">Upload Your Speech</h3>
               </div>
-              
+
               <label className="block">
                 <div className="border-2 border-dashed border-gray-600 rounded-xl p-12 hover:border-yellow-500 transition-all cursor-pointer bg-gray-900/50 hover:bg-gray-900">
                   <input
@@ -387,7 +392,7 @@ const ExtemporeSpeechEvaluator = () => {
               >
                 <span>← New Analysis</span>
               </button>
-              
+
               {geminiSpeech && (
                 <button
                   onClick={() => setShowComparison(!showComparison)}
@@ -398,6 +403,36 @@ const ExtemporeSpeechEvaluator = () => {
                 </button>
               )}
             </div>
+
+            {/* Your Uploaded Video Display */}
+            {preview && (
+              <div className="bg-gradient-to-br from-blue-900/20 to-cyan-900/20 rounded-2xl p-6 border-2 border-blue-500">
+                <h2 className="text-2xl font-bold mb-4 flex items-center">
+                  <Video className="w-6 h-6 mr-3 text-blue-500" />
+                  Your Speech Recording
+                </h2>
+                <div className="rounded-xl overflow-hidden bg-black">
+                  {preview.type.startsWith('video') ? (
+                    <video
+                      src={preview.url}
+                      controls
+                      className="w-full max-h-[500px]"
+                      controlsList="nodownload"
+                    />
+                  ) : (
+                    <audio
+                      src={preview.url}
+                      controls
+                      className="w-full"
+                      controlsList="nodownload"
+                    />
+                  )}
+                </div>
+                <p className="text-sm text-blue-400 mt-4">
+                  📹 Review your performance and body language while reading the feedback below
+                </p>
+              </div>
+            )}
 
             {/* Topic Display */}
             <div className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl p-4 border border-purple-500">
@@ -597,7 +632,7 @@ const ExtemporeSpeechEvaluator = () => {
                     AI Reference Transcript
                   </h3>
                   <div className="bg-gray-900/50 rounded-xl p-4 border border-gray-700 max-h-96 overflow-y-auto">
-             <p className="text-gray-300 leading-relaxed whitespace-pre-wrap">{geminiSpeech}</p>
+                    <p className="text-gray-300 leading-relaxed whitespace-pre-wrap">{geminiSpeech}</p>
                   </div>
                   <button
                     onClick={() => copyToClipboard(geminiSpeech)}

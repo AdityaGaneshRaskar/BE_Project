@@ -43,7 +43,7 @@ def create_tables():
     try:
         cursor = conn.cursor()
         
-        # Users table (unchanged)
+        # Users table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id SERIAL PRIMARY KEY,
@@ -55,12 +55,14 @@ def create_tables():
             )
         """)
         
-        # Enhanced speech analyses table with more tracking
+        # Enhanced speech analyses table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS speech_analyses (
                 analysis_id SERIAL PRIMARY KEY,
                 user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
                 filename VARCHAR(255),
+                video_path VARCHAR(500),
+                topic TEXT,
                 transcription TEXT,
                 
                 -- Feedback scores
@@ -97,6 +99,21 @@ def create_tables():
             )
         """)
         
+        # Check if topic column exists, if not add it
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='speech_analyses' AND column_name='topic'
+        """)
+        
+        if cursor.fetchone() is None:
+            print("⚠️ Adding missing 'topic' column to speech_analyses table...")
+            cursor.execute("""
+                ALTER TABLE speech_analyses 
+                ADD COLUMN topic TEXT
+            """)
+            print("✅ 'topic' column added successfully")
+        
         # Create index for faster queries
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_user_analyses 
@@ -104,14 +121,14 @@ def create_tables():
         """)
         
         conn.commit()
-        print("✅ Database tables created successfully")
+        print("✅ Database tables created/verified successfully")
     except Exception as e:
         print(f"❌ Error creating tables: {e}")
         conn.rollback()
     finally:
         cursor.close()
         release_db_connection(conn)
-
+                
 def hash_password(password):
     """Hash a password using SHA-256"""
     return hashlib.sha256(password.encode()).hexdigest()
@@ -193,9 +210,12 @@ def save_analysis(user_id, analysis_data):
         )
         session_number = cursor.fetchone()[0] + 1
         
+        # Safely extract topic with default empty string
+        topic = analysis_data.get('topic', '')
+        
         cursor.execute("""
             INSERT INTO speech_analyses (
-                user_id, filename, transcription,
+                user_id, filename, video_path, topic, transcription,
                 clarity_score, clarity_comment,
                 arguments_score, arguments_comment,
                 grammar_score, grammar_comment,
@@ -205,11 +225,13 @@ def save_analysis(user_id, analysis_data):
                 confidence_score, nervousness_score,
                 file_duration, file_size,
                 session_number
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING analysis_id
         """, (
             user_id,
             analysis_data.get('filename', ''),
+            analysis_data.get('video_path', ''),
+            topic,
             analysis_data.get('transcription', ''),
             feedback.get('Clarity', {}).get('score', 0),
             feedback.get('Clarity', {}).get('comment', ''),
@@ -234,21 +256,23 @@ def save_analysis(user_id, analysis_data):
         
         analysis_id = cursor.fetchone()[0]
         conn.commit()
+        print(f"✅ Analysis saved successfully: ID {analysis_id}, Session {session_number}")
         return {"success": True, "analysis_id": analysis_id, "session_number": session_number}
     except Exception as e:
         conn.rollback()
+        print(f"❌ Error saving analysis: {e}")
         return {"success": False, "message": f"Error: {str(e)}"}
     finally:
         cursor.close()
         release_db_connection(conn)
-
+                
 def get_user_history(user_id, limit=10):
     """Get user's speech analysis history"""
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT analysis_id, filename, overall_score, 
+            SELECT analysis_id, filename, topic, overall_score, 
                    confidence_score, nervousness_score, analyzed_at
             FROM speech_analyses
             WHERE user_id = %s
@@ -262,10 +286,11 @@ def get_user_history(user_id, limit=10):
             history.append({
                 "analysis_id": row[0],
                 "filename": row[1],
-                "overall_score": row[2],
-                "confidence_score": row[3],
-                "nervousness_score": row[4],
-                "analyzed_at": row[5].strftime("%Y-%m-%d %H:%M:%S")
+                "topic": row[2],
+                "overall_score": row[3],
+                "confidence_score": row[4],
+                "nervousness_score": row[5],
+                "analyzed_at": row[6].strftime("%Y-%m-%d %H:%M:%S")
             })
         return {"success": True, "history": history}
     except Exception as e:
@@ -359,7 +384,7 @@ def get_detailed_history(user_id, limit=20):
         cursor = conn.cursor()
         cursor.execute("""
             SELECT 
-                analysis_id, session_number, filename,
+                analysis_id, session_number, filename, topic,
                 clarity_score, arguments_score, grammar_score, 
                 delivery_score, overall_score,
                 confidence_score, nervousness_score,
@@ -378,22 +403,23 @@ def get_detailed_history(user_id, limit=20):
                 "analysis_id": row[0],
                 "session_number": row[1],
                 "filename": row[2],
+                "topic": row[3],
                 "scores": {
-                    "clarity": round(row[3] or 0, 1),
-                    "arguments": round(row[4] or 0, 1),
-                    "grammar": round(row[5] or 0, 1),
-                    "delivery": round(row[6] or 0, 1),
-                    "overall": round(row[7] or 0, 1)
+                    "clarity": round(row[4] or 0, 1),
+                    "arguments": round(row[5] or 0, 1),
+                    "grammar": round(row[6] or 0, 1),
+                    "delivery": round(row[7] or 0, 1),
+                    "overall": round(row[8] or 0, 1)
                 },
-                "confidence_score": round(row[8] or 0, 1),
-                "nervousness_score": round(row[9] or 0, 1),
+                "confidence_score": round(row[9] or 0, 1),
+                "nervousness_score": round(row[10] or 0, 1),
                 "gestures": {
-                    "smile": round(row[10] or 0, 3),
-                    "eyebrow": round(row[11] or 0, 3),
-                    "blink": row[12] or 0,
-                    "head_tilt": round(row[13] or 0, 3)
+                    "smile": round(row[11] or 0, 3),
+                    "eyebrow": round(row[12] or 0, 3),
+                    "blink": row[13] or 0,
+                    "head_tilt": round(row[14] or 0, 3)
                 },
-                "analyzed_at": row[14].strftime("%Y-%m-%d %H:%M:%S")
+                "analyzed_at": row[15].strftime("%Y-%m-%d %H:%M:%S")
             })
         return {"success": True, "history": history}
     except Exception as e:
@@ -409,7 +435,7 @@ def compare_analyses(user_id, analysis_id_1, analysis_id_2):
         cursor = conn.cursor()
         cursor.execute("""
             SELECT 
-                analysis_id, session_number, filename, transcription,
+                analysis_id, session_number, filename, topic, transcription,
                 clarity_score, clarity_comment,
                 arguments_score, arguments_comment,
                 grammar_score, grammar_comment,
@@ -434,23 +460,24 @@ def compare_analyses(user_id, analysis_id_1, analysis_id_2):
                 "analysis_id": row[0],
                 "session_number": row[1],
                 "filename": row[2],
-                "transcription": row[3],
+                "topic": row[3],
+                "transcription": row[4],
                 "feedback": {
-                    "clarity": {"score": row[4], "comment": row[5]},
-                    "arguments": {"score": row[6], "comment": row[7]},
-                    "grammar": {"score": row[8], "comment": row[9]},
-                    "delivery": {"score": row[10], "comment": row[11]},
-                    "overall": {"score": row[12], "comment": row[13]}
+                    "clarity": {"score": row[5], "comment": row[6]},
+                    "arguments": {"score": row[7], "comment": row[8]},
+                    "grammar": {"score": row[9], "comment": row[10]},
+                    "delivery": {"score": row[11], "comment": row[12]},
+                    "overall": {"score": row[13], "comment": row[14]}
                 },
-                "confidence_score": row[14],
-                "nervousness_score": row[15],
+                "confidence_score": row[15],
+                "nervousness_score": row[16],
                 "gestures": {
-                    "smile": row[16],
-                    "eyebrow": row[17],
-                    "blink": row[18],
-                    "head_tilt": row[19]
+                    "smile": row[17],
+                    "eyebrow": row[18],
+                    "blink": row[19],
+                    "head_tilt": row[20]
                 },
-                "analyzed_at": row[20].strftime("%Y-%m-%d %H:%M:%S")
+                "analyzed_at": row[21].strftime("%Y-%m-%d %H:%M:%S")
             })
         
         # Calculate improvements

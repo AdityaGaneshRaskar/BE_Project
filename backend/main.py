@@ -1,7 +1,8 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
-import shutil, os, json, requests
+import shutil, os, json, requests, time
 from dotenv import load_dotenv
 from stt_service import transcribe_audio
 from facial_gesture import FacialGestureAnalyzer
@@ -66,10 +67,18 @@ class SaveAnalysisRequest(BaseModel):
     user_id: int
     analysis_data: dict
 
+class GenerateSpeechRequest(BaseModel):
+    topic: str
+
+class CompareSpeeches(BaseModel):
+    user_transcript: str
+    gemini_speech: str
+
 # =======================
-# 5️⃣ Gemini Helper
+# 5️⃣ Gemini Helper Functions
 # =======================
 def call_gemini(transcription: str) -> dict:
+    """Get feedback on transcribed speech from Gemini"""
     url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
     headers = {
         "Content-Type": "application/json",
@@ -106,6 +115,7 @@ def call_gemini(transcription: str) -> dict:
 
         return json.loads(clean)
     except Exception as e:
+        print(f"❌ Gemini API Error: {e}")
         return {"Error": f"Failed to get Gemini feedback: {e}"}
 
 def generate_gemini_speech(topic: str) -> dict:
@@ -141,6 +151,7 @@ def generate_gemini_speech(topic: str) -> dict:
         speech = data["candidates"][0]["content"]["parts"][0]["text"].strip()
         return {"success": True, "speech": speech}
     except Exception as e:
+        print(f"❌ Generate Speech Error: {e}")
         return {"success": False, "message": f"Failed to generate speech: {e}"}
 
 def analyze_speech_comparison(user_transcript: str, gemini_speech: str) -> dict:
@@ -191,16 +202,20 @@ def analyze_speech_comparison(user_transcript: str, gemini_speech: str) -> dict:
         
         return {"success": True, "analysis": json.loads(clean)}
     except Exception as e:
+        print(f"❌ Speech Comparison Error: {e}")
         return {"success": False, "message": f"Failed to analyze comparison: {e}"}
-    
+
 # =======================
-# 6️⃣ Routes
+# 6️⃣ API Routes
 # =======================
+
 @app.get("/")
 def root():
+    """Health check endpoint"""
     return {
         "message": "✅ Backend running with Faster-Whisper + Gemini + Facial Gesture Analyzer",
-        "database_available": DB_AVAILABLE
+        "database_available": DB_AVAILABLE,
+        "version": "1.0.0"
     }
 
 @app.post("/login")
@@ -234,21 +249,43 @@ def signup(request: SignupRequest):
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
-    """Analyze speech from uploaded file"""
+    """Analyze speech from uploaded video/audio file"""
     temp_path = f"temp_{file.filename}"
+    saved_video_path = None
+    
     try:
-        # Save uploaded file
+        # Save uploaded file temporarily
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         file.file.close()
 
+        # Create uploads directory if it doesn't exist
+        uploads_dir = "uploads"
+        if not os.path.exists(uploads_dir):
+            os.makedirs(uploads_dir)
+
+        # Save video permanently with unique name
+        timestamp = int(time.time())
+        file_extension = os.path.splitext(file.filename)[1]
+        unique_filename = f"{timestamp}_{file.filename}"
+        saved_video_path = os.path.join(uploads_dir, unique_filename)
+        
+        # Copy to permanent location
+        shutil.copy2(temp_path, saved_video_path)
+        
+        # Get file info
+        file_size = os.path.getsize(temp_path)
+
         # Step 1: Transcribe speech
+        print("📝 Transcribing audio...")
         transcription = transcribe_audio(temp_path)
 
         # Step 2: Gemini feedback
+        print("🤖 Getting Gemini feedback...")
         feedback = call_gemini(transcription)
 
         # Step 3: Facial gesture analysis
+        print("😊 Analyzing facial gestures...")
         analyzer = FacialGestureAnalyzer()
         gesture_metrics = analyzer.analyze_video(temp_path)
 
@@ -261,17 +298,27 @@ async def analyze(file: UploadFile = File(...)):
         blink = min(gesture_metrics.get('blink_count', 0), 20) / 20
         nervousness = max(0, min(10, (eyebrow * 5 + blink * 5 + head_movement * 5)))
 
-        # Return response
+        print("✅ Analysis complete!")
+        
+        # Return response with video path
         return {
             "transcription": transcription,
             "feedback": feedback,
             "gesture_metrics": gesture_metrics,
-            "confidence_score": confidence,
-            "nervousness_score": nervousness,
-            "filename": file.filename
+            "confidence_score": round(confidence, 2),
+            "nervousness_score": round(nervousness, 2),
+            "filename": file.filename,
+            "video_path": saved_video_path,
+            "file_size": file_size,
+            "file_duration": gesture_metrics.get('duration', 0)
         }
 
+    except Exception as e:
+        print(f"❌ Analysis error: {e}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+    
     finally:
+        # Cleanup temp file only
         try:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
@@ -282,10 +329,19 @@ async def analyze(file: UploadFile = File(...)):
 def save_analysis_endpoint(request: SaveAnalysisRequest):
     """Save speech analysis to database"""
     if not DB_AVAILABLE:
-        return {"success": False, "message": "Database not available"}
+        raise HTTPException(status_code=503, detail="Database not available")
     
     try:
-        result = save_analysis(request.user_id, request.analysis_data)
+        # Ensure analysis_data has all required fields with defaults
+        analysis_data = request.analysis_data.copy()
+        
+        # Add topic if not present (empty string as default)
+        if 'topic' not in analysis_data:
+            analysis_data['topic'] = ''
+        
+        print(f"💾 Saving analysis for user {request.user_id}...")
+        result = save_analysis(request.user_id, analysis_data)
+        
         if result['success']:
             return {
                 "success": True, 
@@ -295,25 +351,19 @@ def save_analysis_endpoint(request: SaveAnalysisRequest):
             }
         else:
             raise HTTPException(status_code=500, detail=result.get('message', 'Failed to save analysis'))
-    except Exception as e:
-        print(f"❌ Save analysis error: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-
-@app.get("/user-statistics/{user_id}")
-def get_statistics(user_id: int):
-    """Get user's overall statistics"""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Database not available")
     
-    try:
-        result = get_user_statistics(user_id)
-        if result['success']:
-            return result
-        else:
-            raise HTTPException(status_code=404, detail=result.get('message'))
     except Exception as e:
-        print(f"❌ Statistics error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ Save analysis error: 500: {e}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.get("/uploads/{filename}")
+async def get_video(filename: str):
+    """Serve uploaded video files"""
+    file_path = os.path.join("uploads", filename)
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    else:
+        raise HTTPException(status_code=404, detail="Video not found")
 
 @app.get("/user-history/{user_id}")
 def get_history(user_id: int, limit: int = 20):
@@ -331,6 +381,22 @@ def get_history(user_id: int, limit: int = 20):
         print(f"❌ History error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/user-statistics/{user_id}")
+def get_statistics(user_id: int):
+    """Get user's overall statistics"""
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        result = get_user_statistics(user_id)
+        if result['success']:
+            return result
+        else:
+            raise HTTPException(status_code=404, detail=result.get('message'))
+    except Exception as e:
+        print(f"❌ Statistics error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/compare/{user_id}/{analysis_id_1}/{analysis_id_2}")
 def compare(user_id: int, analysis_id_1: int, analysis_id_2: int):
     """Compare two analyses"""
@@ -346,9 +412,6 @@ def compare(user_id: int, analysis_id_1: int, analysis_id_2: int):
     except Exception as e:
         print(f"❌ Comparison error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-    
-class GenerateSpeechRequest(BaseModel):
-    topic: str
 
 @app.post("/generate-gemini-speech")
 def generate_speech(request: GenerateSpeechRequest):
@@ -360,11 +423,8 @@ def generate_speech(request: GenerateSpeechRequest):
         else:
             raise HTTPException(status_code=500, detail=result.get('message'))
     except Exception as e:
+        print(f"❌ Generate speech error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-class CompareSpeeches(BaseModel):
-    user_transcript: str
-    gemini_speech: str
 
 @app.post("/compare-speeches")
 def compare_speeches(request: CompareSpeeches):
@@ -376,4 +436,12 @@ def compare_speeches(request: CompareSpeeches):
         else:
             raise HTTPException(status_code=500, detail=result.get('message'))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))  
+        print(f"❌ Compare speeches error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# =======================
+# 7️⃣ Run the app
+# =======================
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
