@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Upload, Mic, Video, TrendingUp, Brain, Smile, CheckCircle, LogOut, User, Copy, Volume2, ArrowRight, Sparkles, BarChart3, MessageSquare } from 'lucide-react';
+import { Mic, Video, TrendingUp, Brain, Smile, CheckCircle, LogOut, User, Copy, Volume2, ArrowRight, Sparkles, BarChart3, MessageSquare } from 'lucide-react';
 import Login from './Login';
 import ProgressDashboard from './ProgressDashboard';
 
@@ -136,73 +136,6 @@ const ExtemporeSpeechEvaluator = () => {
   const speakText = (text) => {
     const utterance = new SpeechSynthesisUtterance(text);
     window.speechSynthesis.speak(utterance);
-  };
-
-  const RadarChart = ({ data, labels }) => {
-    const size = 200;
-    const center = size / 2;
-    const maxRadius = 80;
-    const numPoints = data.length;
-
-    const points = data.map((value, i) => {
-      const angle = (Math.PI * 2 * i) / numPoints - Math.PI / 2;
-      const radius = (value / 10) * maxRadius;
-      return {
-        x: center + radius * Math.cos(angle),
-        y: center + radius * Math.sin(angle)
-      };
-    });
-
-    const pathData = points.map((p, i) =>
-      `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`
-    ).join(' ') + ' Z';
-
-    const gridLevels = [2, 4, 6, 8, 10];
-
-    return (
-      <svg width={size} height={size} className="mx-auto">
-        <defs>
-          <radialGradient id="radarGradient">
-            <stop offset="0%" stopColor="#ff6b6b" stopOpacity="0.6" />
-            <stop offset="100%" stopColor="#feca57" stopOpacity="0.2" />
-          </radialGradient>
-        </defs>
-
-        {gridLevels.map(level => {
-          const levelPoints = Array(numPoints).fill(0).map((_, i) => {
-            const angle = (Math.PI * 2 * i) / numPoints - Math.PI / 2;
-            const radius = (level / 10) * maxRadius;
-            return {
-              x: center + radius * Math.cos(angle),
-              y: center + radius * Math.sin(angle)
-            };
-          });
-
-          const levelPath = levelPoints.map((p, i) =>
-            `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`
-          ).join(' ') + ' Z';
-
-          return (
-            <path key={level} d={levelPath} fill="none" stroke="#333" strokeWidth="1" opacity="0.3" />
-          );
-        })}
-
-        {points.map((_, i) => {
-          const angle = (Math.PI * 2 * i) / numPoints - Math.PI / 2;
-          const endX = center + maxRadius * Math.cos(angle);
-          const endY = center + maxRadius * Math.sin(angle);
-          return (
-            <line key={i} x1={center} y1={center} x2={endX} y2={endY} stroke="#444" strokeWidth="1" />
-          );
-        })}
-
-        <path d={pathData} fill="url(#radarGradient)" stroke="#feca57" strokeWidth="2" />
-
-        {points.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r="4" fill="#ff6b6b" />
-        ))}
-      </svg>
-    );
   };
 
   // Show Login if not logged in
