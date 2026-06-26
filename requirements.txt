@@ -8,5 +8,4 @@ mediapipe
 streamlit
 matplotlib
 pydantic
-python-
 psycopg2

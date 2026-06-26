@@ -1,0 +1,1 @@
+im making the project call estempore speech evaluation of user using the audio video format where user will upload his video on peoject and my project will give feedback on basis of his argument and gesture. till now i have completed the audio to text part using whisper ai,feedback of argument using gemini,facial recognition using mediapipe.and i done the frontend using react.

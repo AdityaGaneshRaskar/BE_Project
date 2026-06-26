@@ -1,9 +1,16 @@
 import cv2
 import mediapipe as mp
 import numpy as np
+import mediapipe as mp
+
+print("MediaPipe file:", mp.__file__)
+print("MediaPipe version:", mp.__version__)
+print("Has solutions:", hasattr(mp, "solutions"))
 
 class FacialGestureAnalyzer:
     def __init__(self):
+        print("Creating FaceMesh...")
+        print("mp.solutions =", mp.solutions)
         self.mp_face = mp.solutions.face_mesh.FaceMesh(
             static_image_mode=False,
             max_num_faces=1,

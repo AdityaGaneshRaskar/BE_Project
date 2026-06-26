@@ -1,30 +1,37 @@
-# Ignore Python cache
+# Python cache
 __pycache__/
-*.pyc
-*.pyo
+**/__pycache__/
+*.py[cod]
 
-# Ignore virtual environment
+# Virtual environments
 venv/
-
-# Ignore environment files
-.env
-
-# Ignore system files
-.DS_Store
-Thumbs.db
-
-# Ignore temporary audio files
-temp_*.mp3
-
-# Ignore frontend dependencies
-frontend/node_modules/
-
-# Ignore build folder
-frontend/build/
-
-# Ignore Python virtual environment in root
-venv/
+venv311/
 .venv/
 env/
 
+# Environment variables
+.env
 
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+temp_*.mp3
+
+# Frontend
+frontend/node_modules/
+frontend/build/
+
+# Backend uploads
+backend/uploads/
+
+# Any uploads folder
+uploads/
+
+# Video files
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm

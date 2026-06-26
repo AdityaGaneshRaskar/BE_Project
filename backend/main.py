@@ -25,8 +25,11 @@ except Exception as e:
 # =======================
 # 1️⃣ Load Environment
 # =======================
-load_dotenv()
+from dotenv import load_dotenv
+import os
+load_dotenv(override=True)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+print("Loaded key starts with:", GEMINI_API_KEY[:15])
 
 if not GEMINI_API_KEY:
     raise ValueError("❌ GEMINI_API_KEY not found in .env file")
@@ -79,7 +82,7 @@ class CompareSpeeches(BaseModel):
 # =======================
 def call_gemini(transcription: str) -> dict:
     """Get feedback on transcribed speech from Gemini"""
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     headers = {
         "Content-Type": "application/json",
         "x-goog-api-key": GEMINI_API_KEY
@@ -102,6 +105,9 @@ def call_gemini(transcription: str) -> dict:
 
     try:
         r = requests.post(url, headers=headers, json=payload, timeout=60)
+        print("Gemini Status:", r.status_code)
+        print("Gemini Response:", r.text)
+
         r.raise_for_status()
         data = r.json()
         raw_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -115,12 +121,12 @@ def call_gemini(transcription: str) -> dict:
 
         return json.loads(clean)
     except Exception as e:
-        print(f"❌ Gemini API Error: {e}")
-        return {"Error": f"Failed to get Gemini feedback: {e}"}
+        print("FULL ERROR:", str(e))
+        return {"Error": str(e)}
 
 def generate_gemini_speech(topic: str) -> dict:
     """Generate a reference speech on a given topic using Gemini"""
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     headers = {
         "Content-Type": "application/json",
         "x-goog-api-key": GEMINI_API_KEY
@@ -156,7 +162,7 @@ def generate_gemini_speech(topic: str) -> dict:
 
 def analyze_speech_comparison(user_transcript: str, gemini_speech: str) -> dict:
     """Analyze and compare user's speech with Gemini's speech"""
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     headers = {
         "Content-Type": "application/json",
         "x-goog-api-key": GEMINI_API_KEY
