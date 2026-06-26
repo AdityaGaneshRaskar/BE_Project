@@ -21,7 +21,7 @@ const TopicPractice = ({ user, onBack }) => {
 
     setIsGenerating(true);
     try {
-      const response = await fetch('http://127.0.0.1:8000/generate-gemini-speech', {
+      const response = await fetch('https://speechvision-backend.onrender.com/generate-gemini-speech', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -63,7 +63,7 @@ const TopicPractice = ({ user, onBack }) => {
     formData.append('file', file);
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/analyze', {
+      const response = await fetch('https://speechvision-backend.onrender.com/analyze', {
         method: 'POST',
         body: formData,
       });
@@ -75,7 +75,7 @@ const TopicPractice = ({ user, onBack }) => {
 
         // Save to database if user is logged in
         if (user && !user.isGuest && user.userId) {
-          await fetch('http://127.0.0.1:8000/save-analysis', {
+          await fetch('https://speechvision-backend.onrender.com/save-analysis', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -92,7 +92,7 @@ const TopicPractice = ({ user, onBack }) => {
         }
 
         // Compare speeches
-        const compareResponse = await fetch('http://127.0.0.1:8000/compare-speeches', {
+        const compareResponse = await fetch('https://speechvision-backend.onrender.com/compare-speeches', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

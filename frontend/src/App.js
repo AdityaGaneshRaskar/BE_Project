@@ -64,7 +64,7 @@ const ExtemporeSpeechEvaluator = () => {
 
     try {
       // Step 1: Analyze user's speech
-      const response = await fetch('http://127.0.0.1:8000/analyze', {
+      const response = await fetch('https://speechvision-backend.onrender.com/analyze', {
         method: 'POST',
         body: formData,
       });
@@ -75,7 +75,7 @@ const ExtemporeSpeechEvaluator = () => {
 
         // Save to database if logged in
         if (user && !user.isGuest && user.userId) {
-          await fetch('http://127.0.0.1:8000/save-analysis', {
+          await fetch('https://speechvision-backend.onrender.com/save-analysis', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -91,7 +91,7 @@ const ExtemporeSpeechEvaluator = () => {
         }
 
         // Step 2: Generate Gemini's speech on the same topic
-        const geminiResponse = await fetch('http://127.0.0.1:8000/generate-gemini-speech', {
+        const geminiResponse = await fetch('https://speechvision-backend.onrender.com/generate-gemini-speech', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ topic: topic }),
@@ -103,7 +103,7 @@ const ExtemporeSpeechEvaluator = () => {
             setGeminiSpeech(geminiData.speech);
 
             // Step 3: Compare speeches
-            const compareResponse = await fetch('http://127.0.0.1:8000/compare-speeches', {
+            const compareResponse = await fetch('https://speechvision-backend.onrender.com/compare-speeches', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({

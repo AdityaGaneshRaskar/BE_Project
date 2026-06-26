@@ -32,7 +32,7 @@ const Login = ({ onLoginSuccess }) => {
     }
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/login', {
+      const response = await fetch('https://speechvision-backend.onrender.com/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -92,7 +92,7 @@ const Login = ({ onLoginSuccess }) => {
     }
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/signup', {
+      const response = await fetch('https://speechvision-backend.onrender.com/signup', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

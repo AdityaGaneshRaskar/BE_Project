@@ -19,13 +19,13 @@ const ProgressDashboard = ({ user, onBack }) => {
     try {
       setLoading(true);
 
-      const historyRes = await fetch(`http://127.0.0.1:8000/user-history/${user.userId}?limit=50`);
+      const historyRes = await fetch(`https://speechvision-backend.onrender.com/user-history/${user.userId}?limit=50`);
       if (historyRes.ok) {
         const historyData = await historyRes.json();
         setHistory(historyData.history || []);
       }
 
-      const statsRes = await fetch(`http://127.0.0.1:8000/user-statistics/${user.userId}`);
+      const statsRes = await fetch(`https://speechvision-backend.onrender.com/user-statistics/${user.userId}`);
       if (statsRes.ok) {
         const statsData = await statsRes.json();
         setStatistics(statsData.statistics);
@@ -49,7 +49,7 @@ const ProgressDashboard = ({ user, onBack }) => {
     if (selectedAnalyses.length === 2) {
       try {
         const res = await fetch(
-          `http://127.0.0.1:8000/compare/${user.userId}/${selectedAnalyses[0]}/${selectedAnalyses[1]}`
+          `https://speechvision-backend.onrender.com/compare/${user.userId}/${selectedAnalyses[0]}/${selectedAnalyses[1]}`
         );
         if (res.ok) {
           const data = await res.json();

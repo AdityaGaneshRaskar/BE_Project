@@ -124,7 +124,7 @@ if uploaded_file is not None:
             files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
             
             try:
-                response = requests.post("http://127.0.0.1:8000/analyze", files=files, timeout=300)
+                response = requests.post("https://speechvision-backend.onrender.com/analyze", files=files, timeout=300)
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
                 st.error(f"❌ Failed to connect to the analysis service: {e}")
